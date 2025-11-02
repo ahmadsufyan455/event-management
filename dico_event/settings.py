@@ -37,6 +37,14 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
+    "rest_framework_simplejwt",
+    "accounts.apps.AccountsConfig"
+    "events.apps.EventsConfig"
+    "payments.apps.PaymentsConfig"
+    "registrations.apps.RegistrationsConfig"
+    "tickets.apps.TicketsConfig",
+    "common.apps.CommonConfig",
 ]
 
 MIDDLEWARE = [
