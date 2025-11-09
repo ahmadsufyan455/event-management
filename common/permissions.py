@@ -20,7 +20,9 @@ class IsAdminOrSuperUser(BasePermission):
         return bool(user and user.is_authenticated and (user.is_superuser or _is_admin(user)))
 
 
-class IsEventOrganizer(BasePermission):
+class IsSuperUserOrAdminOrOrganizer(BasePermission):
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and (_is_event_organizer(user)))
+        return bool(
+            user and user.is_authenticated and (user.is_superuser or _is_admin(user) or _is_event_organizer(user))
+        )

@@ -2,7 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from .models import User, Group, AssignRole
 from .serializers import UserSerializer, GroupSerializer, AssignRoleSerializer
-from .permissions import IsSuperUser, IsAdminOrSuperUser
+from common.permissions import IsSuperUser, IsAdminOrSuperUser
 
 
 class GroupViewSet(viewsets.ModelViewSet):
