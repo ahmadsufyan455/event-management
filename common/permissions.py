@@ -28,7 +28,7 @@ class IsSuperUserOrAdminOrOrganizer(BasePermission):
         )
 
 
-class RegistrationPermission(BasePermission):
+class UserPermission(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         if request.method == "POST":
