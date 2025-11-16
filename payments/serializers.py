@@ -26,11 +26,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def get_registration(self, obj):
-        return {
-            "id": str(obj.registration_id),
-            "user": obj.registration.user.username,
-            "ticket": obj.registration.ticket.name,
-        }
+        return str(obj.registration_id)
 
     def validate(self, attrs):
         if attrs["payment_method"] not in [choice[0] for choice in PAYMENT_METHOD_CHOICES]:

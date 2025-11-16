@@ -23,6 +23,8 @@ class IsAdminOrSuperUser(BasePermission):
 class IsSuperUserOrAdminOrOrganizer(BasePermission):
     def has_permission(self, request, view):
         user = request.user
+        if request.method == "GET":
+            return bool(user and user.is_authenticated)
         return bool(
             user and user.is_authenticated and (user.is_superuser or _is_admin(user) or _is_event_organizer(user))
         )
@@ -41,12 +43,6 @@ class IsSuperUserOrAdminOrOrganizer(BasePermission):
 class UserPermission(BasePermission):
     def has_permission(self, request, view):
         user = request.user
-        if request.method == "POST":
-            return bool(
-                user
-                and user.is_authenticated
-                and not (user.is_superuser or _is_admin(user) or _is_event_organizer(user))
-            )
         if request.method == "GET":
             if view.action == "list":
                 return bool(user and user.is_authenticated and (user.is_superuser or _is_admin(user)))

@@ -27,14 +27,7 @@ class TicketSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def get_event(self, obj):
-        return {
-            "id": str(obj.event_id),
-            "name": obj.event.name,
-            "description": obj.event.description,
-            "location": obj.event.location,
-            "start_time": obj.event.start_time,
-            "end_time": obj.event.end_time,
-        }
+        return obj.event.name
 
     def validate(self, attrs):
         if attrs["sales_start"] >= attrs["sales_end"]:
