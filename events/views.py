@@ -2,7 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from .models import Event
 from .serializers import EventSerializer
-from common.permissions import IsAdminOrSuperUser, IsSuperUserOrAdminOrOrganizer
+from common.permissions import IsSuperUserOrAdminOrOrganizer
 
 
 class EventViewSet(viewsets.ModelViewSet):
