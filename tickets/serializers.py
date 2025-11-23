@@ -3,12 +3,14 @@ from rest_framework import serializers
 from events.models import Event
 from .models import Ticket
 
+from django.core.cache import cache
 
 class TicketSerializer(serializers.ModelSerializer):
     sales_start = serializers.DateTimeField(format="%Y-%m-%d %H:%M")
     sales_end = serializers.DateTimeField(format="%Y-%m-%d %H:%M")
     event_id = serializers.UUIDField(write_only=True)
     event = serializers.SerializerMethodField(read_only=True)
+    CACHE_KEY_DETAIL = "ticket_detail_{}"
 
     class Meta:
         model = Ticket
@@ -46,4 +48,6 @@ class TicketSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        cache_key = self.CACHE_KEY_DETAIL.format(instance.id)
+        cache.delete(cache_key)
         return instance
