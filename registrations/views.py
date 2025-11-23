@@ -63,8 +63,10 @@ class RegistrationViewSet(viewsets.ModelViewSet):
         try:
             response = super().create(request, *args, **kwargs)
             registration_id = response.data.get("id")
-            user_email = response.data.get("user", {}).get("email")
-            username = response.data.get("user", {}).get("username")
+            username = response.data.get("user")
+
+            registration = Registration.objects.select_related("user").get(id=registration_id)
+            user_email = registration.user.email
 
             logger.info(f"Registration created successfully: {registration_id}, sending email to {user_email}")
             send_ticket_email.delay(user_email, username, registration_id)
