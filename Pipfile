@@ -10,6 +10,7 @@ djangorestframework-simplejwt = "*"
 psycopg2-binary = "*"
 python-dotenv = "*"
 minio = "*"
+pillow = "*"
 
 [dev-packages]
 

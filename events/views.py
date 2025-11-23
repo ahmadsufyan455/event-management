@@ -1,10 +1,23 @@
-from rest_framework import viewsets
+import os
+from minio import Minio
+from rest_framework import viewsets, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Event
-from .serializers import EventSerializer
+from .models import Event, EventPoster
+from rest_framework.decorators import action
+from .serializers import EventPosterSerializer, EventSerializer
 from common.permissions import IsSuperUserOrAdminOrOrganizer
+from rest_framework.parsers import MultiPartParser, FormParser
+
+
+def get_minio_client():
+    return Minio(
+        endpoint=os.getenv("MINIO_ENDPOINT_URL"),
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
+        secure=False,
+    )
 
 
 class EventsPagination(PageNumberPagination):
@@ -26,3 +39,37 @@ class EventViewSet(viewsets.ModelViewSet):
     serializer_class = EventSerializer
     permission_classes = [IsAuthenticated, IsSuperUserOrAdminOrOrganizer]
     pagination_class = EventsPagination
+
+    @action(detail=True, methods=["get"], url_path="poster")
+    def poster(self, request, pk=None):
+        event = self.get_object()
+        posters = event.posters.all()
+
+        bucket_name = os.getenv("MINIO_BUCKET_NAME")
+
+        serialized_posters = []
+        for poster in posters:
+            client = get_minio_client()
+            presigned_url = client.presigned_get_object(
+                bucket_name,
+                poster.image.name,
+                response_headers={
+                    "response-content-type": "image/jpeg",
+                },
+            )
+            serialized_posters.append({"id": poster.id, "image_url": presigned_url})
+
+        return Response(serialized_posters, status=status.HTTP_200_OK)
+
+
+class EventPosterViewSet(viewsets.ModelViewSet):
+    queryset = EventPoster.objects.all()
+    serializer_class = EventPosterSerializer
+    permission_classes = [IsAuthenticated, IsSuperUserOrAdminOrOrganizer]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"messages": "upload image success"}, status=status.HTTP_201_CREATED)

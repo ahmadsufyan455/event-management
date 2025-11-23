@@ -1,8 +1,83 @@
+import os
+import tempfile
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
 from accounts.models import User
-from .models import Event
+from .models import Event, EventPoster
+
+from minio import Minio
+
+
+class EventPosterSerializer(serializers.ModelSerializer):
+    event = serializers.UUIDField(write_only=True)
+    image_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = EventPoster
+        fields = ["id", "event", "image", "image_url"]
+        read_only_fields = ["id", "image_url"]
+        extra_kwargs = {
+            "image": {"write_only": True},
+        }
+
+    def validate_image(self, value):
+        if value.size > 500 * 1024:
+            raise serializers.ValidationError("Image size must be less than 500KB.")
+
+        allowed_mime_types = ["image/jpeg", "image/png", "image/jpg"]
+        content_type = getattr(value, "content_type", None)
+
+        if content_type not in allowed_mime_types:
+            raise serializers.ValidationError("Image must be a JPEG, PNG, or JPG.")
+
+        return value
+
+    def get_minio_client(self):
+        return Minio(
+            endpoint=os.getenv("MINIO_ENDPOINT_URL"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
+            secure=False,
+        )
+
+    def validate(self, attrs):
+        get_object_or_404(Event, pk=attrs["event"])
+        return attrs
+
+    def create(self, validated_data):
+        event_id = validated_data.pop("event")
+        image_file = validated_data.pop("image")
+        bucket_name = os.getenv("MINIO_BUCKET_NAME")
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                for chunk in image_file.chunks():
+                    temp_file.write(chunk)
+                temp_file_path = temp_file.name
+
+            object_name = f"{image_file.name}"
+            client = self.get_minio_client()
+
+            if not client.bucket_exists(bucket_name):
+                client.make_bucket(bucket_name)
+
+            client.fput_object(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                file_path=temp_file_path,
+                content_type=image_file.content_type,
+            )
+        except Exception as e:
+            raise serializers.ValidationError(f"Failed to upload image to MinIO: {e}")
+        finally:
+            os.remove(temp_file_path)
+
+        return EventPoster.objects.create(
+            event_id=event_id,
+            image=object_name,
+            **validated_data,
+        )
 
 
 class EventSerializer(serializers.ModelSerializer):
