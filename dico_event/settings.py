@@ -106,6 +106,18 @@ CACHES = {
     }
 }
 
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("MAIL_HOST")
+EMAIL_PORT = int(os.getenv("MAIL_PORT"))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("MAIL_USER")
+EMAIL_HOST_PASSWORD = os.getenv("MAIL_PASSWORD")
+DEFAULT_FROM_EMAIL = os.getenv("MAIL_USER", "no-reply@dicoevent.com")
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators

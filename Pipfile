@@ -12,6 +12,7 @@ python-dotenv = "*"
 minio = "*"
 pillow = "*"
 redis = "*"
+celery = "*"
 
 [dev-packages]
 

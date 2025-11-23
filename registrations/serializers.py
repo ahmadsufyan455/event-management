@@ -19,7 +19,10 @@ class RegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "user", "ticket"]
 
     def get_user(self, obj):
-        return obj.user.username
+        return {
+            "username": obj.user.username,
+            "email": obj.user.email,
+        }
 
     def get_ticket(self, obj):
         return obj.ticket.name
