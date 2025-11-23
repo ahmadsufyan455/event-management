@@ -11,6 +11,7 @@ from common.permissions import IsSuperUserOrAdminOrOrganizer
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.cache import cache
 from loguru import logger
+from rest_framework.exceptions import NotFound
 
 
 def get_minio_client():
@@ -30,6 +31,8 @@ def get_minio_client():
 
 class EventsPagination(PageNumberPagination):
     page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
     def get_paginated_response(self, data):
         return Response(
@@ -40,6 +43,35 @@ class EventsPagination(PageNumberPagination):
                 "events": data,
             }
         )
+
+    def paginate_queryset(self, queryset, request, view=None):
+        page_size = self.get_page_size(request)
+        if not page_size:
+            return None
+
+        paginator = self.django_paginator_class(queryset, page_size)
+        page_number = request.query_params.get(self.page_query_param, 1)
+
+        try:
+            page_number = int(page_number)
+            if page_number < 1:
+                page_number = 1
+        except (TypeError, ValueError):
+            page_number = 1
+
+        try:
+            self.page = paginator.page(page_number)
+        except Exception:
+            if paginator.num_pages > 0:
+                self.page = paginator.page(paginator.num_pages)
+            else:
+                self.page = paginator.page(1)
+
+        if paginator.num_pages > 1 and self.template is not None:
+            self.display_page_controls = True
+
+        self.request = request
+        return list(self.page)
 
 
 class EventViewSet(viewsets.ModelViewSet):
@@ -53,6 +85,18 @@ class EventViewSet(viewsets.ModelViewSet):
         try:
             response = super().list(request, *args, **kwargs)
             logger.info(f"Event list retrieved successfully. Count: {response.data.get('count', 0)}")
+            return response
+        except NotFound as e:
+            # Handle invalid page number
+            logger.warning(f"Invalid page requested: {request.query_params.get('page', 'not provided')}")
+            # Return first page instead of error
+            request.query_params._mutable = True
+            request.query_params["page"] = "1"
+            request.query_params._mutable = False
+            response = super().list(request, *args, **kwargs)
+            logger.info(
+                f"Event list retrieved successfully (corrected to page 1). Count: {response.data.get('count', 0)}"
+            )
             return response
         except Exception as e:
             logger.error(f"Error retrieving event list: {e}", exc_info=True)
@@ -177,18 +221,18 @@ class EventPosterViewSet(viewsets.ModelViewSet):
             logger.error(f"Error retrieving EventPoster {poster_id}: {e}", exc_info=True)
             raise
 
-    def create(self, request, *args, **kwargs):
-        event_id = request.data.get("event")
-        logger.info(f"EventPoster create requested by user: {request.user.username}, event_id: {event_id}")
-        try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            instance = serializer.save()
-            logger.info(f"EventPoster created successfully: {instance.id}, event_id: {event_id}")
-            return Response({"messages": "upload image success"}, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            logger.error(f"Error creating EventPoster for event {event_id}: {e}", exc_info=True)
-            raise
+    # def create(self, request, *args, **kwargs):
+    #     event_id = request.data.get("event")
+    #     logger.info(f"EventPoster create requested by user: {request.user.username}, event_id: {event_id}")
+    #     try:
+    #         serializer = self.get_serializer(data=request.data)
+    #         serializer.is_valid(raise_exception=True)
+    #         instance = serializer.save()
+    #         logger.info(f"EventPoster created successfully: {instance.id}, event_id: {event_id}")
+    #         return Response({"messages": "upload image success"}, status=status.HTTP_201_CREATED)
+    #     except Exception as e:
+    #         logger.error(f"Error creating EventPoster for event {event_id}: {e}", exc_info=True)
+    #         raise
 
     def destroy(self, request, *args, **kwargs):
         poster_id = kwargs.get("pk")

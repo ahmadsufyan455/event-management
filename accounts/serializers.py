@@ -30,6 +30,10 @@ class UserSerializer(serializers.ModelSerializer):
             "password",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {
+            "email": {"required": False},
+            "username": {"required": False},
+        }
 
     def get_roles(self, obj):
         # obj.roles -> AssignRole, follow to Group names

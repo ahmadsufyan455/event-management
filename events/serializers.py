@@ -13,15 +13,20 @@ from loguru import logger
 
 class EventPosterSerializer(serializers.ModelSerializer):
     event = serializers.UUIDField(write_only=True)
-    image_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = EventPoster
-        fields = ["id", "event", "image", "image_url"]
-        read_only_fields = ["id", "image_url"]
+        fields = ["id", "event", "image"]
+        read_only_fields = ["id"]
         extra_kwargs = {
             "image": {"write_only": True},
         }
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.image:
+            representation["image"] = instance.image.name if hasattr(instance.image, "name") else str(instance.image)
+        return representation
 
     def validate_image(self, value):
         logger.info(f"Validating image: size={value.size}, content_type={getattr(value, 'content_type', None)}")
@@ -141,29 +146,6 @@ class EventSerializer(serializers.ModelSerializer):
             "username": obj.organizer.username,
             "email": obj.organizer.email,
         }
-
-    def validate(self, attrs):
-        quota = attrs.get("quota")
-        start_time = attrs.get("start_time")
-        end_time = attrs.get("end_time")
-        organizer_id = attrs.get("organizer_id")
-        logger.info(f"Validating Event: quota={quota}, organizer_id={organizer_id}")
-
-        try:
-            if quota < 1:
-                logger.warning(f"Event validation failed: quota {quota} is less than 1")
-                raise serializers.ValidationError("Quota must be at least 1.")
-            if start_time >= end_time:
-                logger.warning(f"Event validation failed: start_time {start_time} >= end_time {end_time}")
-                raise serializers.ValidationError("Start time must be before end time.")
-            get_object_or_404(User, pk=organizer_id)
-            logger.info(f"Event validation successful: organizer_id={organizer_id}")
-            return attrs
-        except serializers.ValidationError:
-            raise
-        except Exception as e:
-            logger.error(f"Error validating Event: {e}", exc_info=True)
-            raise
 
     def create(self, validated_data):
         event_name = validated_data.get("name")
