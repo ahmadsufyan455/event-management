@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Payment
 from common.constants import PAYMENT_METHOD_CHOICES, PAYMENT_STATUS_CHOICES
+from loguru import logger
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -29,23 +30,57 @@ class PaymentSerializer(serializers.ModelSerializer):
         return str(obj.registration_id)
 
     def validate(self, attrs):
-        if attrs["payment_method"] not in [choice[0] for choice in PAYMENT_METHOD_CHOICES]:
-            raise serializers.ValidationError("Invalid payment method.")
-        if attrs["payment_status"] not in [choice[0] for choice in PAYMENT_STATUS_CHOICES]:
-            raise serializers.ValidationError("Invalid payment status.")
-        return attrs
+        payment_method = attrs.get("payment_method")
+        payment_status = attrs.get("payment_status")
+        registration_id = attrs.get("registration_id")
+        logger.info(f"Validating Payment: registration_id={registration_id}, method={payment_method}, status={payment_status}")
+        
+        try:
+            if payment_method not in [choice[0] for choice in PAYMENT_METHOD_CHOICES]:
+                logger.warning(f"Payment validation failed: invalid payment method {payment_method}")
+                raise serializers.ValidationError("Invalid payment method.")
+            if payment_status not in [choice[0] for choice in PAYMENT_STATUS_CHOICES]:
+                logger.warning(f"Payment validation failed: invalid payment status {payment_status}")
+                raise serializers.ValidationError("Invalid payment status.")
+            logger.info(f"Payment validation successful: registration_id={registration_id}")
+            return attrs
+        except serializers.ValidationError:
+            raise
+        except Exception as e:
+            logger.error(f"Error validating Payment: {e}", exc_info=True)
+            raise
 
     def create(self, validated_data):
-        return Payment.objects.create(**validated_data)
+        registration_id = validated_data.get("registration_id")
+        amount = validated_data.get("amount_paid")
+        logger.info(f"Creating Payment: registration_id={registration_id}, amount={amount}")
+        try:
+            payment = Payment.objects.create(**validated_data)
+            logger.info(f"Payment created successfully: {payment.id}, registration_id={registration_id}")
+            return payment
+        except Exception as e:
+            logger.error(f"Error creating Payment: {e}", exc_info=True)
+            raise
 
     def update(self, instance, validated_data):
-        if "payment_method" in validated_data:
-            if validated_data["payment_method"] not in [choice[0] for choice in PAYMENT_METHOD_CHOICES]:
-                raise serializers.ValidationError("Invalid payment method.")
-        if "payment_status" in validated_data:
-            if validated_data["payment_status"] not in [choice[0] for choice in PAYMENT_STATUS_CHOICES]:
-                raise serializers.ValidationError("Invalid payment status.")
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        return instance
+        payment_id = instance.id
+        logger.info(f"Updating Payment: {payment_id}")
+        try:
+            if "payment_method" in validated_data:
+                if validated_data["payment_method"] not in [choice[0] for choice in PAYMENT_METHOD_CHOICES]:
+                    logger.warning(f"Payment update validation failed: invalid payment method {validated_data['payment_method']}")
+                    raise serializers.ValidationError("Invalid payment method.")
+            if "payment_status" in validated_data:
+                if validated_data["payment_status"] not in [choice[0] for choice in PAYMENT_STATUS_CHOICES]:
+                    logger.warning(f"Payment update validation failed: invalid payment status {validated_data['payment_status']}")
+                    raise serializers.ValidationError("Invalid payment status.")
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            logger.info(f"Payment updated successfully: {payment_id}")
+            return instance
+        except serializers.ValidationError:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating Payment {payment_id}: {e}", exc_info=True)
+            raise

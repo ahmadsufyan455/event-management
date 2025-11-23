@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.pagination import PageNumberPagination, Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -8,6 +8,7 @@ from .serializers import RegistrationSerializer
 from common.permissions import UserPermission
 
 from .task import send_ticket_email
+from loguru import logger
 
 
 class RegistrationsPagination(PageNumberPagination):
@@ -30,11 +31,71 @@ class RegistrationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, UserPermission]
     pagination_class = RegistrationsPagination
 
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        send_ticket_email.delay(
-            response.data["user"]["email"],
-            response.data["user"]["username"],
-            response.data["id"],
+    def list(self, request, *args, **kwargs):
+        logger.info(f"Registration list requested by user: {request.user.username}")
+        try:
+            response = super().list(request, *args, **kwargs)
+            logger.info(f"Registration list retrieved successfully. Count: {response.data.get('count', 0)}")
+            return response
+        except Exception as e:
+            logger.error(f"Error retrieving registration list: {e}", exc_info=True)
+            raise
+
+    def retrieve(self, request, *args, **kwargs):
+        registration_id = kwargs.get("pk")
+        logger.info(
+            f"Registration retrieve requested by user: {request.user.username}, registration_id: {registration_id}"
         )
-        return response
+        try:
+            response = super().retrieve(request, *args, **kwargs)
+            logger.info(f"Registration retrieved successfully: {registration_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error retrieving registration {registration_id}: {e}", exc_info=True)
+            raise
+
+    def create(self, request, *args, **kwargs):
+        user_id = request.data.get("user_id")
+        ticket_id = request.data.get("ticket_id")
+        logger.info(
+            f"Registration create requested by user: {request.user.username}, user_id: {user_id}, ticket_id: {ticket_id}"
+        )
+        try:
+            response = super().create(request, *args, **kwargs)
+            registration_id = response.data.get("id")
+            user_email = response.data.get("user", {}).get("email")
+            username = response.data.get("user", {}).get("username")
+
+            logger.info(f"Registration created successfully: {registration_id}, sending email to {user_email}")
+            send_ticket_email.delay(user_email, username, registration_id)
+            logger.info(f"Email task queued for registration {registration_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error creating registration: {e}", exc_info=True)
+            raise
+
+    def update(self, request, *args, **kwargs):
+        registration_id = kwargs.get("pk")
+        logger.info(
+            f"Registration update requested by user: {request.user.username}, registration_id: {registration_id}"
+        )
+        try:
+            response = super().update(request, *args, **kwargs)
+            logger.info(f"Registration updated successfully: {registration_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error updating registration {registration_id}: {e}", exc_info=True)
+            raise
+
+    def destroy(self, request, *args, **kwargs):
+        registration_id = kwargs.get("pk")
+        logger.info(
+            f"Registration delete requested by user: {request.user.username}, registration_id: {registration_id}"
+        )
+        try:
+            response = super().destroy(request, *args, **kwargs)
+            logger.info(f"Registration deleted successfully: {registration_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error deleting registration {registration_id}: {e}", exc_info=True)
+            raise

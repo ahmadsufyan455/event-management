@@ -10,15 +10,22 @@ from .serializers import EventPosterSerializer, EventSerializer
 from common.permissions import IsSuperUserOrAdminOrOrganizer
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.cache import cache
+from loguru import logger
 
 
 def get_minio_client():
-    return Minio(
-        endpoint=os.getenv("MINIO_ENDPOINT_URL"),
-        access_key=os.getenv("MINIO_ACCESS_KEY"),
-        secret_key=os.getenv("MINIO_SECRET_KEY"),
-        secure=False,
-    )
+    try:
+        client = Minio(
+            endpoint=os.getenv("MINIO_ENDPOINT_URL"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
+            secure=False,
+        )
+        logger.info("MinIO client initialized successfully")
+        return client
+    except Exception as e:
+        logger.error(f"Error initializing MinIO client: {e}", exc_info=True)
+        raise
 
 
 class EventsPagination(PageNumberPagination):
@@ -41,50 +48,104 @@ class EventViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSuperUserOrAdminOrOrganizer]
     pagination_class = EventsPagination
 
+    def list(self, request, *args, **kwargs):
+        logger.info(f"Event list requested by user: {request.user.username}")
+        try:
+            response = super().list(request, *args, **kwargs)
+            logger.info(f"Event list retrieved successfully. Count: {response.data.get('count', 0)}")
+            return response
+        except Exception as e:
+            logger.error(f"Error retrieving event list: {e}", exc_info=True)
+            raise
+
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        cache_key = EventSerializer.CACHE_KEY_DETAIL.format(instance.id)
+        event_id = kwargs.get("pk")
+        logger.info(f"Event retrieve requested by user: {request.user.username}, event_id: {event_id}")
+        try:
+            instance = self.get_object()
+            cache_key = EventSerializer.CACHE_KEY_DETAIL.format(instance.id)
 
-        cached_event = cache.get(cache_key)
+            cached_event = cache.get(cache_key)
 
-        if cached_event:
-            serializer = self.get_serializer(cached_event)
-            response = Response(serializer.data, status=status.HTTP_200_OK)
-            response["X-Data-Source"] = "cache"
+            if cached_event:
+                serializer = self.get_serializer(cached_event)
+                response = Response(serializer.data, status=status.HTTP_200_OK)
+                response["X-Data-Source"] = "cache"
+                logger.info(f"Event {event_id} retrieved from cache")
+                return response
+            else:
+                serializer = self.get_serializer(instance)
+                response = Response(serializer.data, status=status.HTTP_200_OK)
+                response["X-Data-Source"] = "database"
+                cache.set(cache_key, instance, timeout=3600)
+                logger.info(f"Event {event_id} retrieved from database and cached")
+                return response
+        except Exception as e:
+            logger.error(f"Error retrieving event {event_id}: {e}", exc_info=True)
+            raise
+
+    def create(self, request, *args, **kwargs):
+        logger.info(f"Event create requested by user: {request.user.username}, event_name: {request.data.get('name')}")
+        try:
+            response = super().create(request, *args, **kwargs)
+            logger.info(f"Event created successfully: {response.data.get('id')}, name: {response.data.get('name')}")
             return response
-        else:
-            serializer = self.get_serializer(instance)
-            response = Response(serializer.data, status=status.HTTP_200_OK)
-            response["X-Data-Source"] = "database"
-            cache.set(cache_key, instance, timeout=3600)
+        except Exception as e:
+            logger.error(f"Error creating event: {e}", exc_info=True)
+            raise
+
+    def update(self, request, *args, **kwargs):
+        event_id = kwargs.get("pk")
+        logger.info(f"Event update requested by user: {request.user.username}, event_id: {event_id}")
+        try:
+            response = super().update(request, *args, **kwargs)
+            cache_key = self.serializer_class.CACHE_KEY_DETAIL.format(event_id)
+            cache.delete(cache_key)
+            logger.info(f"Event updated successfully: {event_id}, cache invalidated")
             return response
+        except Exception as e:
+            logger.error(f"Error updating event {event_id}: {e}", exc_info=True)
+            raise
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        cache_key = self.serializer_class.CACHE_KEY_DETAIL.format(instance.id)
-        cache.delete(cache_key)
-        return super().destroy(request, *args, **kwargs)
+        event_id = kwargs.get("pk")
+        logger.info(f"Event delete requested by user: {request.user.username}, event_id: {event_id}")
+        try:
+            instance = self.get_object()
+            cache_key = self.serializer_class.CACHE_KEY_DETAIL.format(instance.id)
+            cache.delete(cache_key)
+            response = super().destroy(request, *args, **kwargs)
+            logger.info(f"Event deleted successfully: {event_id}, cache invalidated")
+            return response
+        except Exception as e:
+            logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
+            raise
 
     @action(detail=True, methods=["get"], url_path="poster")
     def poster(self, request, pk=None):
-        event = self.get_object()
-        posters = event.posters.all()
+        logger.info(f"Event poster requested by user: {request.user.username}, event_id: {pk}")
+        try:
+            event = self.get_object()
+            posters = event.posters.all()
+            bucket_name = os.getenv("MINIO_BUCKET_NAME")
 
-        bucket_name = os.getenv("MINIO_BUCKET_NAME")
+            serialized_posters = []
+            for poster in posters:
+                client = get_minio_client()
+                presigned_url = client.presigned_get_object(
+                    bucket_name,
+                    poster.image.name,
+                    response_headers={
+                        "response-content-type": "image/jpeg",
+                    },
+                )
+                serialized_posters.append({"id": poster.id, "image_url": presigned_url})
 
-        serialized_posters = []
-        for poster in posters:
-            client = get_minio_client()
-            presigned_url = client.presigned_get_object(
-                bucket_name,
-                poster.image.name,
-                response_headers={
-                    "response-content-type": "image/jpeg",
-                },
-            )
-            serialized_posters.append({"id": poster.id, "image_url": presigned_url})
-
-        return Response(serialized_posters, status=status.HTTP_200_OK)
+            logger.info(f"Event posters retrieved successfully for event {pk}, count: {len(serialized_posters)}")
+            return Response(serialized_posters, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error retrieving event posters for event {pk}: {e}", exc_info=True)
+            raise
 
 
 class EventPosterViewSet(viewsets.ModelViewSet):
@@ -93,8 +154,49 @@ class EventPosterViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSuperUserOrAdminOrOrganizer]
     parser_classes = [MultiPartParser, FormParser]
 
+    def list(self, request, *args, **kwargs):
+        logger.info(f"EventPoster list requested by user: {request.user.username}")
+        try:
+            response = super().list(request, *args, **kwargs)
+            logger.info(
+                f"EventPoster list retrieved successfully. Count: {len(response.data) if isinstance(response.data, list) else response.data.get('count', 0)}"
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Error retrieving EventPoster list: {e}", exc_info=True)
+            raise
+
+    def retrieve(self, request, *args, **kwargs):
+        poster_id = kwargs.get("pk")
+        logger.info(f"EventPoster retrieve requested by user: {request.user.username}, poster_id: {poster_id}")
+        try:
+            response = super().retrieve(request, *args, **kwargs)
+            logger.info(f"EventPoster retrieved successfully: {poster_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error retrieving EventPoster {poster_id}: {e}", exc_info=True)
+            raise
+
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({"messages": "upload image success"}, status=status.HTTP_201_CREATED)
+        event_id = request.data.get("event")
+        logger.info(f"EventPoster create requested by user: {request.user.username}, event_id: {event_id}")
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            instance = serializer.save()
+            logger.info(f"EventPoster created successfully: {instance.id}, event_id: {event_id}")
+            return Response({"messages": "upload image success"}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.error(f"Error creating EventPoster for event {event_id}: {e}", exc_info=True)
+            raise
+
+    def destroy(self, request, *args, **kwargs):
+        poster_id = kwargs.get("pk")
+        logger.info(f"EventPoster delete requested by user: {request.user.username}, poster_id: {poster_id}")
+        try:
+            response = super().destroy(request, *args, **kwargs)
+            logger.info(f"EventPoster deleted successfully: {poster_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Error deleting EventPoster {poster_id}: {e}", exc_info=True)
+            raise

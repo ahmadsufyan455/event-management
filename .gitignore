@@ -1,1 +1,6 @@
 .env
+# Log files
+*.log
+application.log
+error.log
+logs/

@@ -4,6 +4,7 @@ from tickets.models import Ticket
 from accounts.models import User
 from .models import Registration
 from django.utils import timezone
+from loguru import logger
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
@@ -28,14 +29,30 @@ class RegistrationSerializer(serializers.ModelSerializer):
         return obj.ticket.name
 
     def create(self, validated_data):
-        return Registration.objects.create(**validated_data)
+        user_id = validated_data.get("user_id")
+        ticket_id = validated_data.get("ticket_id")
+        logger.info(f"Creating Registration: user_id={user_id}, ticket_id={ticket_id}")
+        try:
+            registration = Registration.objects.create(**validated_data)
+            logger.info(f"Registration created successfully: {registration.id}")
+            return registration
+        except Exception as e:
+            logger.error(f"Error creating Registration: {e}", exc_info=True)
+            raise
 
     def update(self, instance, validated_data):
-        if "ticket_id" in validated_data:
-            get_object_or_404(Ticket, pk=validated_data["ticket_id"])
-        if "user_id" in validated_data:
-            get_object_or_404(User, pk=validated_data["user_id"])
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        return instance
+        registration_id = instance.id
+        logger.info(f"Updating Registration: {registration_id}")
+        try:
+            if "ticket_id" in validated_data:
+                get_object_or_404(Ticket, pk=validated_data["ticket_id"])
+            if "user_id" in validated_data:
+                get_object_or_404(User, pk=validated_data["user_id"])
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            logger.info(f"Registration updated successfully: {registration_id}")
+            return instance
+        except Exception as e:
+            logger.error(f"Error updating Registration {registration_id}: {e}", exc_info=True)
+            raise
