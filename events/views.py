@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from .serializers import EventPosterSerializer, EventSerializer
 from common.permissions import IsSuperUserOrAdminOrOrganizer
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.cache import cache
 
 
 def get_minio_client():
@@ -35,10 +36,34 @@ class EventsPagination(PageNumberPagination):
 
 
 class EventViewSet(viewsets.ModelViewSet):
-    queryset = Event.objects.all().order_by("-created_at")
+    queryset = Event.objects.select_related("organizer").all().order_by("-created_at")
     serializer_class = EventSerializer
     permission_classes = [IsAuthenticated, IsSuperUserOrAdminOrOrganizer]
     pagination_class = EventsPagination
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        cache_key = EventSerializer.CACHE_KEY_DETAIL.format(instance.id)
+
+        cached_event = cache.get(cache_key)
+
+        if cached_event:
+            serializer = self.get_serializer(cached_event)
+            response = Response(serializer.data, status=status.HTTP_200_OK)
+            response["X-Data-Source"] = "cache"
+            return response
+        else:
+            serializer = self.get_serializer(instance)
+            response = Response(serializer.data, status=status.HTTP_200_OK)
+            response["X-Data-Source"] = "database"
+            cache.set(cache_key, instance, timeout=3600)
+            return response
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        cache_key = self.serializer_class.CACHE_KEY_DETAIL.format(instance.id)
+        cache.delete(cache_key)
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["get"], url_path="poster")
     def poster(self, request, pk=None):

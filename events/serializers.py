@@ -1,5 +1,6 @@
 import os
 import tempfile
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
@@ -85,6 +86,7 @@ class EventSerializer(serializers.ModelSerializer):
     end_time = serializers.DateTimeField(format="%Y-%m-%d %H:%M")
     organizer_id = serializers.UUIDField(write_only=True)
     organizer = serializers.SerializerMethodField(read_only=True)
+    CACHE_KEY_DETAIL = "event_detail_{}"
 
     class Meta:
         model = Event
@@ -129,4 +131,6 @@ class EventSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        cache_key = self.CACHE_KEY_DETAIL.format(instance.id)
+        cache.delete(cache_key)
         return instance
